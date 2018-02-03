@@ -1,0 +1,86 @@
+#!/usr/bin/env node
+'use strict'
+
+const http = require('http')
+const api = require('../api')
+const Raven = require('raven')
+const { inspect } = require('util')
+const merge = require('lodash.merge')
+const debug = require('debug')('my-service:api:server')
+
+/**
+ * Unhandled Rejections
+ * Logs any unhandled exception/rejection to the console and exits the process.
+ */
+process.on('unhandledRejection', (reason, promise) => {
+  if (Raven.installed) {
+    Raven.captureException(reason)
+  }
+
+  console.error(reason)
+})
+
+/**
+ * Environment
+ * Gets environment from NODE_ENV environment variable or default to 'development'.
+ * @type {String}
+ */
+const environment = process.env.NODE_ENV || 'development'
+
+/**
+ * Ensuring default settings.
+ */
+const config = merge({
+  binding: {
+    port: parseInt(process.env.PORT || 3000)
+  },
+  loggers: {
+    requests: {
+      /**
+       * Output format used by RequestsLogger middleware
+       * @see https://github.com/expressjs/morgan#predefined-formats
+       */
+      format: ':method :url :status :res[content-length] - :response-time ms'
+    }
+  },
+  sentry: {
+    environment,
+    autoBreadcrumbs: true,
+    dsn: process.env.SENTRY_DSN,
+    release: process.env.SENTRY_RELEASE,
+    tags: { git_commit: process.env.SENTRY_GIT_COMMIT },
+    sendTimeout: parseInt(process.env.SENTRY_TIMEOUT || 1),
+    shouldSendCallback: () => environment !== 'development'
+  }
+},  require('../config'))
+
+/**
+ * Sentry Setup
+ * Initialize Sentry if a DSN has been providaded.
+ */
+if (config.sentry.dsn) {
+  Raven.config(config.sentry.dsn, config.sentry)
+       .install()
+
+  Raven.on('error', (err) => {
+    const { reason, statusCode, response } = err
+    const message = 'Sentry was unable to log the following error:'
+    console.error(message, inspect({ reason, statusCode, response }))
+  })
+}
+
+if (!Raven.installed) {
+  debug('Sentry initialization has been skipped.')
+}
+
+const server = http.createServer(api.factory(config, environment))
+
+server.on('listening', () => {
+  const addr = server.address()
+  const bind = typeof addr === 'string'
+    ? `pipe ${addr}`
+    : `port ${addr.port}`
+  debug(`Listening on ${bind}`)
+})
+
+server.listen(config.binding.port)

@@ -1,0 +1,12 @@
+version: '3.3'
+
+services:
+    api:
+        environment:
+            DEBUG: ${DEBUG}
+            MONGODB_URL: ${MONGODB_URL}
+            NODE_ENV: ${NODE_ENV}
+            SENTRY_DSN: ${SENTRY_DSN}
+            SENTRY_NAME: api
+            SENTRY_TIMEOUT: ${SENTRY_TIMEOUT}
+        image: my-service:${RELEASE_VERSION:-latest}
